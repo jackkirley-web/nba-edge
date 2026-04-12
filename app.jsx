@@ -354,7 +354,22 @@ function StreakScreen(){
   const fetchStreaks=useCallback(async()=>{
     try{
       const d=await apiFetch("/api/streaks?window="+win+"&min_rate=0.5&limit=100",30000);
-      setStreaks(d.streaks||[]);
+      // Flatten window-specific fields onto each streak so cards can read them directly
+      const enriched=(d.streaks||[]).map(s=>{
+        const wd=s.windows&&s.windows[win]?s.windows[win]:{};
+        const hits=wd.hits??s.best_hits??0;
+        const games=wd.games??win;
+        const hit_rate=wd.hit_rate??s.best_hit_rate??0;
+        const pct=wd.pct??Math.round(hit_rate*100);
+        const is_perfect=hits===games&&games>0;
+        return{
+          ...s,
+          hits,games,hit_rate,pct,is_perfect,
+          // detail view uses all_windows — map from windows object
+          all_windows:s.windows||{},
+        };
+      });
+      setStreaks(enriched);
       setBgLoading(d.loading||false);
       setLoading(false);
       if(d.loading){pollRef.current=setTimeout(fetchStreaks,15000);}
@@ -443,21 +458,25 @@ function StreakScreen(){
         {filtered.length>0&&<div style={{display:"grid",gridTemplateColumns:"1fr auto",padding:"8px 0",marginBottom:4}}><span style={{fontFamily:D.font,fontSize:11,color:D.t3,letterSpacing:"0.06em"}}>PLAYER / THRESHOLD</span><span style={{fontFamily:D.font,fontSize:11,color:D.t3,letterSpacing:"0.06em"}}>L{win}</span></div>}
         {filtered.map((s,i)=>{
           const isPerfect=s.is_perfect;
+          const hitColor=isPerfect?D.green:s.hit_rate>=0.8?D.gold:s.hit_rate>=0.6?D.gold:D.t2;
+          const cardBg=isPerfect?D.greenDim:s.hit_rate>=0.8?"rgba(201,168,76,0.08)":D.bg1;
+          const cardBorder=isPerfect?D.green+"44":s.hit_rate>=0.8?D.gold+"33":D.border;
+          const squareHit=isPerfect?D.green:s.hit_rate>=0.7?D.gold:D.gold;
           const trendColor=s.trend==="up"?D.green:s.trend==="down"?D.red:D.t3;
           return(
-            <div key={i} onClick={()=>setSel(s)} style={{background:isPerfect?D.greenDim:D.bg1,borderRadius:10,padding:"13px 16px",marginBottom:8,border:"0.5px solid "+(isPerfect?D.green+"33":D.border),cursor:"pointer"}}>
+            <div key={i} onClick={()=>setSel(s)} style={{background:cardBg,borderRadius:10,padding:"13px 16px",marginBottom:8,border:"0.5px solid "+cardBorder,cursor:"pointer"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                 <div style={{flex:1,minWidth:0,marginRight:12}}>
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}><span style={{fontFamily:D.font,fontWeight:500,fontSize:15,color:D.t1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{s.player}</span><span style={{fontFamily:D.mono,fontSize:9,color:D.t3,flexShrink:0}}>{s.team}</span></div>
                   <div style={{fontFamily:D.font,fontSize:13,color:D.t2,marginBottom:6}}>{s.label}</div>
                   <div style={{display:"flex",gap:3,alignItems:"center"}}>
-                    {(s.last_5_vals||[]).map((v,j)=><div key={j} style={{width:10,height:10,borderRadius:2,background:v>=s.threshold?(isPerfect?D.green:D.gold):D.bg3}}/>)}
-                    {s.trend!=="stable"&&<span style={{fontFamily:D.mono,fontSize:10,color:trendColor,marginLeft:4}}>{s.trend==="up"?"up":"dn"}</span>}
+                    {(s.last_5_vals||[]).map((v,j)=><div key={j} style={{width:10,height:10,borderRadius:2,background:v>=s.threshold?squareHit:D.bg3}}/>)}
+                    {s.trend!=="stable"&&<span style={{fontFamily:D.mono,fontSize:10,color:trendColor,marginLeft:4}}>{s.trend==="up"?"↑":"↓"}</span>}
                   </div>
                 </div>
                 <div style={{textAlign:"right",flexShrink:0}}>
-                  <div style={{fontFamily:D.mono,fontSize:20,color:isPerfect?D.green:s.hit_rate>=0.8?D.gold:D.t2}}>{s.hits}/{s.games}</div>
-                  <div style={{fontFamily:D.font,fontSize:11,color:D.t3}}>{s.pct}%</div>
+                  <div style={{fontFamily:D.mono,fontSize:22,fontWeight:600,color:hitColor,lineHeight:1}}>{s.hits}/{s.games}</div>
+                  <div style={{fontFamily:D.font,fontSize:12,color:hitColor,opacity:0.8,marginTop:2}}>{s.pct}%</div>
                 </div>
               </div>
             </div>
