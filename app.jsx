@@ -1,5 +1,5 @@
-// NBAEdge v6 — Real streak data
-const { useState, useEffect, useCallback } = React;
+// NBAEdge v7 — Decoupled streak cache, fast boot
+const { useState, useEffect, useCallback, useRef } = React;
 const API_BASE = "https://nba-edge-api.onrender.com";
 const D = {
   bg:"#0A0A0A",bg1:"#141414",bg2:"#1E1E1E",bg3:"#282828",
@@ -26,12 +26,12 @@ async function apiFetch(path,timeout=120000){
   finally{clearTimeout(t);}
 }
 
-function Dot({color,size=6}){return React.createElement("span",{style:{display:"inline-block",width:size,height:size,borderRadius:"50%",background:color,flexShrink:0}});}
-function Pill({label,color=D.t3,bg=D.bg3}){return React.createElement("span",{style:{fontSize:10,fontWeight:500,letterSpacing:"0.04em",padding:"2px 7px",borderRadius:4,background:bg,color:color,fontFamily:D.font,textTransform:"uppercase"}},label);}
-function ConfBar({value}){const col=cc(value);return React.createElement("div",{style:{display:"flex",alignItems:"center",gap:8}},React.createElement("div",{style:{flex:1,height:3,background:D.bg3,borderRadius:99,overflow:"hidden"}},React.createElement("div",{style:{width:value+"%",height:"100%",background:col,borderRadius:99}})),React.createElement("span",{style:{fontFamily:D.mono,fontSize:11,color:col,minWidth:28,textAlign:"right"}},value));}
+function Dot({color,size=6}){return<span style={{display:"inline-block",width:size,height:size,borderRadius:"50%",background:color,flexShrink:0}}/> ;}
+function Pill({label,color=D.t3,bg=D.bg3}){return<span style={{fontSize:10,fontWeight:500,letterSpacing:"0.04em",padding:"2px 7px",borderRadius:4,background:bg,color,fontFamily:D.font,textTransform:"uppercase"}}>{label}</span>;}
+function ConfBar({value}){const col=cc(value);return<div style={{display:"flex",alignItems:"center",gap:8}}><div style={{flex:1,height:3,background:D.bg3,borderRadius:99,overflow:"hidden"}}><div style={{width:value+"%",height:"100%",background:col,borderRadius:99}}/></div><span style={{fontFamily:D.mono,fontSize:11,color:col,minWidth:28,textAlign:"right"}}>{value}</span></div>;}
 
 function LoadingScreen({message,progress}){
-  const steps=[{label:"Today's schedule",done:progress>15},{label:"Team & player stats",done:progress>35},{label:"Game logs (L15)",done:progress>50},{label:"Injury reports",done:progress>62},{label:"Live odds",done:progress>75},{label:"Building picks",done:progress>90}];
+  const steps=[{label:"Today's schedule",done:progress>15},{label:"Team & player stats",done:progress>35},{label:"Injury reports",done:progress>55},{label:"Live odds",done:progress>70},{label:"Building picks",done:progress>88}];
   return(
     <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px",gap:28}}>
       <div style={{textAlign:"center"}}>
@@ -44,7 +44,7 @@ function LoadingScreen({message,progress}){
       </div>
       <div style={{width:"100%",maxWidth:220}}>
         {steps.map((s,i)=>(
-          <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"5px 0",borderBottom:i<5?"0.5px solid "+D.border:"none"}}>
+          <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"5px 0",borderBottom:i<4?"0.5px solid "+D.border:"none"}}>
             <div style={{width:14,height:14,borderRadius:"50%",border:"1px solid "+(s.done?D.green:D.border2),background:s.done?D.green:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.3s"}}>
               {s.done&&<svg width="8" height="8" viewBox="0 0 8 8"><polyline points="1,4 3,6 7,2" stroke="#0A0A0A" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>}
             </div>
@@ -344,17 +344,32 @@ function StreakScreen(){
   const [win,setWin]=useState(10);
   const [streaks,setStreaks]=useState([]);
   const [loading,setLoading]=useState(true);
+  const [bgLoading,setBgLoading]=useState(false);
   const [error,setError]=useState(null);
   const [filterStat,setFilterStat]=useState("all");
   const [perfectOnly,setPerfectOnly]=useState(false);
   const [sel,setSel]=useState(null);
+  const pollRef=useRef(null);
+
+  const fetchStreaks=useCallback(async()=>{
+    try{
+      const d=await apiFetch("/api/streaks?window="+win+"&min_rate=0.5&limit=100",30000);
+      setStreaks(d.streaks||[]);
+      setBgLoading(d.loading||false);
+      setLoading(false);
+      if(d.loading){pollRef.current=setTimeout(fetchStreaks,15000);}
+    }catch(e){
+      setError(e.message);
+      setLoading(false);
+    }
+  },[win]);
 
   useEffect(()=>{
     setLoading(true);setError(null);setSel(null);
-    apiFetch("/api/streaks?window="+win+"&min_rate=0.5&limit=100")
-      .then(d=>{setStreaks(d.streaks||[]);setLoading(false);})
-      .catch(e=>{setError(e.message);setLoading(false);});
-  },[win]);
+    clearTimeout(pollRef.current);
+    fetchStreaks();
+    return()=>clearTimeout(pollRef.current);
+  },[fetchStreaks]);
 
   const filtered=streaks.filter(s=>{
     if(filterStat!=="all"&&s.stat!==filterStat)return false;
@@ -381,9 +396,7 @@ function StreakScreen(){
                 <div key={wn} style={{padding:"14px 16px",borderBottom:"0.5px solid "+D.border,display:"flex",justifyContent:"space-between",alignItems:"center",background:isPerfect?D.greenDim:"transparent"}}>
                   <div>
                     <div style={{fontFamily:D.font,fontSize:14,color:D.t1,marginBottom:6}}>Last {wn} games</div>
-                    <div style={{display:"flex",gap:4}}>
-                      {Array.from({length:wn}).map((_,j)=><div key={j} style={{width:8,height:8,borderRadius:2,background:j<wd.hits?(isPerfect?D.green:D.gold):D.bg3}}/>)}
-                    </div>
+                    <div style={{display:"flex",gap:4}}>{Array.from({length:wn}).map((_,j)=><div key={j} style={{width:8,height:8,borderRadius:2,background:j<wd.hits?(isPerfect?D.green:D.gold):D.bg3}}/>)}</div>
                   </div>
                   <div style={{textAlign:"right"}}>
                     <div style={{fontFamily:D.mono,fontSize:20,color:isPerfect?D.green:wd.hit_rate>=0.8?D.gold:D.t2}}>{wd.hits}/{wn}</div>
@@ -399,17 +412,12 @@ function StreakScreen(){
               <div style={{display:"flex",gap:8}}>
                 {sel.last_5_vals.map((v,i)=>{
                   const hit=v>=sel.threshold;
-                  return(
-                    <div key={i} style={{flex:1,textAlign:"center",background:hit?D.greenDim:D.bg2,borderRadius:8,padding:"10px 4px",border:"0.5px solid "+(hit?D.green+"33":D.border)}}>
-                      <div style={{fontFamily:D.mono,fontSize:18,color:hit?D.green:D.t3}}>{v}</div>
-                      <div style={{fontFamily:D.font,fontSize:9,color:D.t3,marginTop:2}}>{hit?"HIT":"MISS"}</div>
-                    </div>
-                  );
+                  return(<div key={i} style={{flex:1,textAlign:"center",background:hit?D.greenDim:D.bg2,borderRadius:8,padding:"10px 4px",border:"0.5px solid "+(hit?D.green+"33":D.border)}}><div style={{fontFamily:D.mono,fontSize:18,color:hit?D.green:D.t3}}>{v}</div><div style={{fontFamily:D.font,fontSize:9,color:D.t3,marginTop:2}}>{hit?"HIT":"MISS"}</div></div>);
                 })}
               </div>
             </div>
           )}
-          <div style={{paddingLeft:12,borderLeft:"2px solid "+D.bg3,fontFamily:D.font,fontSize:12,color:D.t3,lineHeight:1.6}}>Data from NBA.com via nba_api. Today's players only. Past performance does not guarantee future results.</div>
+          <div style={{paddingLeft:12,borderLeft:"2px solid "+D.bg3,fontFamily:D.font,fontSize:12,color:D.t3,lineHeight:1.6}}>Data from NBA.com via nba_api. Past performance does not guarantee future results.</div>
         </div>
       </div>
     );
@@ -419,17 +427,19 @@ function StreakScreen(){
     <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
       <div style={{padding:"4px 20px 16px",flexShrink:0}}><div style={{fontFamily:D.font,fontSize:13,color:D.t3,marginBottom:2}}>NBA.com game logs</div><div style={{fontFamily:D.font,fontWeight:500,fontSize:26,color:D.t1,letterSpacing:"-0.02em"}}>Streak Tracker</div></div>
       <div style={{padding:"0 20px 12px",flexShrink:0,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div style={{display:"flex",gap:8}}>
-          {[5,10,15].map(w=><button key={w} onClick={()=>setWin(w)} style={{padding:"7px 18px",borderRadius:6,border:"0.5px solid "+(win===w?D.gold:D.border),background:win===w?D.goldDim:"transparent",color:win===w?D.gold:D.t3,fontFamily:D.font,fontSize:13,cursor:"pointer"}}>L{w}</button>)}
-        </div>
+        <div style={{display:"flex",gap:8}}>{[5,10,15].map(w=><button key={w} onClick={()=>setWin(w)} style={{padding:"7px 18px",borderRadius:6,border:"0.5px solid "+(win===w?D.gold:D.border),background:win===w?D.goldDim:"transparent",color:win===w?D.gold:D.t3,fontFamily:D.font,fontSize:13,cursor:"pointer"}}>L{w}</button>)}</div>
         <button onClick={()=>setPerfectOnly(p=>!p)} style={{padding:"7px 12px",borderRadius:6,border:"0.5px solid "+(perfectOnly?D.green:D.border),background:perfectOnly?D.greenDim:"transparent",color:perfectOnly?D.green:D.t3,fontFamily:D.font,fontSize:12,cursor:"pointer"}}>{win}/{win} only</button>
       </div>
       <div style={{overflowX:"auto",padding:"0 20px 12px",flexShrink:0,scrollbarWidth:"none"}}><div style={{display:"flex",gap:6,minWidth:"max-content"}}>{["all","pts","reb","ast","3pm","stl","blk"].map(s=><button key={s} onClick={()=>setFilterStat(s)} style={{padding:"5px 12px",borderRadius:6,border:"0.5px solid "+(filterStat===s?D.blue:D.border),background:filterStat===s?D.blueDim:"transparent",color:filterStat===s?D.blue:D.t3,fontFamily:D.font,fontSize:11,cursor:"pointer"}}>{s==="all"?"All":STAT_LABELS[s]||s.toUpperCase()}</button>)}</div></div>
+
+      {bgLoading&&!loading&&<div style={{margin:"0 20px 12px",background:D.goldDim,borderRadius:10,padding:"10px 14px",border:"0.5px solid "+D.gold+"33",flexShrink:0}}><div style={{fontFamily:D.font,fontSize:12,color:D.gold}}>Calculating streaks from real game logs — updating in ~2 minutes...</div></div>}
+
       {loading&&<LoadingScreen message="Loading streaks..." progress={60}/>}
-      {error&&<div style={{padding:"0 20px"}}><div style={{background:D.redDim,borderRadius:10,padding:14,border:"0.5px solid "+D.red+"33"}}><div style={{fontFamily:D.font,fontSize:13,color:D.red}}>{error}</div></div></div>}
+      {error&&!loading&&<div style={{padding:"0 20px"}}><div style={{background:D.redDim,borderRadius:10,padding:14,border:"0.5px solid "+D.red+"33"}}><div style={{fontFamily:D.font,fontSize:13,color:D.red}}>{error}</div></div></div>}
+
       {!loading&&!error&&<div style={{flex:1,overflowY:"auto",padding:"0 20px",paddingBottom:40}}>
         {perfectCount>0&&<div style={{background:D.greenDim,borderRadius:10,padding:"10px 14px",border:"0.5px solid "+D.green+"33",marginBottom:16}}><div style={{fontFamily:D.font,fontSize:13,color:D.green}}>{perfectCount} player{perfectCount!==1?"s":""} hit {win}/{win} in their last {win} games</div></div>}
-        {filtered.length===0&&<div style={{background:D.bg1,borderRadius:12,padding:24,textAlign:"center",fontFamily:D.font,fontSize:14,color:D.t3,border:"0.5px solid "+D.border}}>{streaks.length===0?"No streak data yet — refresh to load today's player logs.":"No streaks match your filters."}</div>}
+        {filtered.length===0&&<div style={{background:D.bg1,borderRadius:12,padding:24,textAlign:"center",fontFamily:D.font,fontSize:14,color:D.t3,border:"0.5px solid "+D.border}}>{streaks.length===0?(bgLoading?"Calculating in the background — check back in a couple of minutes.":"No streak data yet."):"No streaks match your filters."}</div>}
         {filtered.length>0&&<div style={{display:"grid",gridTemplateColumns:"1fr auto",padding:"8px 0",marginBottom:4}}><span style={{fontFamily:D.font,fontSize:11,color:D.t3,letterSpacing:"0.06em"}}>PLAYER / THRESHOLD</span><span style={{fontFamily:D.font,fontSize:11,color:D.t3,letterSpacing:"0.06em"}}>L{win}</span></div>}
         {filtered.map((s,i)=>{
           const isPerfect=s.is_perfect;
@@ -475,9 +485,9 @@ function App(){
 
   const loadAll=useCallback(async(force=false)=>{
     setLoading(true);setError(null);setLoadingMsg("Connecting...");setLoadingProgress(8);
-    const steps=[[16,"Fetching schedule..."],[30,"Team stats..."],[44,"Player logs..."],[57,"Injuries..."],[70,"Live odds..."],[82,"Props engine..."],[93,"Building multis..."]];
+    const steps=[[18,"Fetching schedule..."],[34,"Team stats..."],[50,"Injuries..."],[65,"Live odds..."],[80,"Props engine..."],[93,"Building picks..."]];
     let si=0;
-    const ticker=setInterval(()=>{if(si<steps.length){setLoadingProgress(steps[si][0]);setLoadingMsg(steps[si][1]);si++;}},17000);
+    const ticker=setInterval(()=>{if(si<steps.length){setLoadingProgress(steps[si][0]);setLoadingMsg(steps[si][1]);si++;}},8000);
     try{
       const data=await apiFetch(force?"/api/picks?refresh=true":"/api/picks");
       clearInterval(ticker);setLoadingProgress(100);setLoadingMsg("Done");
@@ -500,9 +510,7 @@ function App(){
           <HamburgerMenu onNavigate={setScreen} onRefresh={()=>loadAll(true)} loading={loading} lastUpdated={lastUpdated}/>
           <div style={{fontFamily:D.font,fontWeight:600,fontSize:15,letterSpacing:"0.1em",color:D.t1,textTransform:"uppercase",position:"absolute",left:"50%",transform:"translateX(-50%)"}}>NBA<span style={{color:D.gold}}>Edge</span></div>
           <div style={{display:"flex",alignItems:"center",gap:6}}>
-            {loading
-              ?<><div style={{width:6,height:6,borderRadius:"50%",background:D.gold,animation:"pulse 1.2s ease-in-out infinite"}}/><style>{"@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}"}</style></>
-              :<div style={{width:6,height:6,borderRadius:"50%",background:D.green}}/>}
+            {loading?<><div style={{width:6,height:6,borderRadius:"50%",background:D.gold,animation:"pulse 1.2s ease-in-out infinite"}}/><style>{"@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}"}</style></>:<div style={{width:6,height:6,borderRadius:"50%",background:D.green}}/>}
           </div>
         </div>
       </div>
