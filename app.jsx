@@ -1,4 +1,4 @@
-// NBAEdge v7 — Decoupled streak cache, fast boot
+// SportEdge v8 -- Multi-sport: NBA + AFL
 const { useState, useEffect, useCallback, useRef } = React;
 const API_BASE = "https://nba-edge-api.onrender.com";
 const D = {
@@ -9,16 +9,18 @@ const D = {
   green:"#4CAF7D",greenDim:"rgba(76,175,125,0.12)",
   red:"#E05252",redDim:"rgba(224,82,82,0.12)",
   blue:"#5B9CF6",blueDim:"rgba(91,156,246,0.12)",
+  afl:"#CC3333",aflDim:"rgba(204,51,51,0.12)",
   font:"-apple-system,'SF Pro Text','SF Pro Display',system-ui,sans-serif",
   mono:"'SF Mono','Fira Mono',Menlo,monospace",
 };
 const cc=c=>c>=70?D.green:c>=58?D.gold:D.blue;
 const TIERS={
-  safe:{label:"Safe",accent:D.green,dim:D.greenDim,desc:"Lowest risk · Highest confidence"},
-  mid:{label:"Mid",accent:D.gold,dim:D.goldDim,desc:"Balanced risk · Strong edges"},
-  lotto:{label:"Lotto",accent:D.red,dim:D.redDim,desc:"High payout · Calculated longshot"},
+  safe:{label:"Safe",accent:D.green,dim:D.greenDim,desc:"Lowest risk * Highest confidence"},
+  mid:{label:"Mid",accent:D.gold,dim:D.goldDim,desc:"Balanced risk * Strong edges"},
+  lotto:{label:"Lotto",accent:D.red,dim:D.redDim,desc:"High payout * Calculated longshot"},
 };
-const STAT_LABELS={pts:"Points",reb:"Rebounds",ast:"Assists","3pm":"3-Pointers",stl:"Steals",blk:"Blocks",pra:"Pts+Reb+Ast",pr:"Pts+Reb",pa:"Pts+Ast",ra:"Reb+Ast",dd:"Double Double",td:"Triple Double"};
+const NBA_STAT_LABELS={pts:"Points",reb:"Rebounds",ast:"Assists","3pm":"3-Pointers",stl:"Steals",blk:"Blocks",pra:"Pts+Reb+Ast",pr:"Pts+Reb",pa:"Pts+Ast",ra:"Reb+Ast",dd:"Double Double",td:"Triple Double"};
+const AFL_STAT_LABELS={disposals:"Disposals",kicks:"Kicks",handballs:"Handballs",marks:"Marks",goals:"Goals",tackles:"Tackles",clearances:"Clearances",hitouts:"Hitouts",fantasy_pts:"Fantasy Points"};
 
 async function apiFetch(path,timeout=120000){
   const c=new AbortController();const t=setTimeout(()=>c.abort(),timeout);
@@ -26,25 +28,61 @@ async function apiFetch(path,timeout=120000){
   finally{clearTimeout(t);}
 }
 
-function Dot({color,size=6}){return<span style={{display:"inline-block",width:size,height:size,borderRadius:"50%",background:color,flexShrink:0}}/> ;}
+function Dot({color,size=6}){return<span style={{display:"inline-block",width:size,height:size,borderRadius:"50%",background:color,flexShrink:0}}/>;}
 function Pill({label,color=D.t3,bg=D.bg3}){return<span style={{fontSize:10,fontWeight:500,letterSpacing:"0.04em",padding:"2px 7px",borderRadius:4,background:bg,color,fontFamily:D.font,textTransform:"uppercase"}}>{label}</span>;}
 function ConfBar({value}){const col=cc(value);return<div style={{display:"flex",alignItems:"center",gap:8}}><div style={{flex:1,height:3,background:D.bg3,borderRadius:99,overflow:"hidden"}}><div style={{width:value+"%",height:"100%",background:col,borderRadius:99}}/></div><span style={{fontFamily:D.mono,fontSize:11,color:col,minWidth:28,textAlign:"right"}}>{value}</span></div>;}
 
-function LoadingScreen({message,progress}){
-  const steps=[{label:"Today's schedule",done:progress>15},{label:"Team & player stats",done:progress>35},{label:"Injury reports",done:progress>55},{label:"Live odds",done:progress>70},{label:"Building picks",done:progress>88}];
+// -- Sport Selector ---------------------------------------------------------
+function SportSelector({onSelect}){
+  return(
+    <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px",gap:32}}>
+      <div style={{textAlign:"center"}}>
+        <div style={{fontFamily:D.font,fontWeight:600,fontSize:24,letterSpacing:"0.12em",color:D.t1,textTransform:"uppercase"}}>Sport<span style={{color:D.gold}}>Edge</span></div>
+        <div style={{fontFamily:D.font,fontSize:12,color:D.t3,letterSpacing:"0.1em",marginTop:6,textTransform:"uppercase"}}>Betting Intelligence</div>
+      </div>
+      <div style={{fontFamily:D.font,fontSize:13,color:D.t3}}>Select a sport to load</div>
+      <div style={{width:"100%",maxWidth:320,display:"flex",flexDirection:"column",gap:12}}>
+        <button onClick={()=>onSelect("nba")} style={{width:"100%",background:D.bg1,border:"0.5px solid "+D.border2,borderRadius:14,padding:"20px 24px",cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div>
+            <div style={{fontFamily:D.font,fontWeight:600,fontSize:18,color:D.t1,letterSpacing:"0.06em"}}>NBA</div>
+            <div style={{fontFamily:D.font,fontSize:12,color:D.t3,marginTop:3}}>Picks * Props * Streaks * Games</div>
+          </div>
+          <div style={{width:40,height:40,borderRadius:10,background:D.goldDim,border:"0.5px solid "+D.gold+"44",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <span style={{fontSize:22}}>🏀</span>
+          </div>
+        </button>
+        <button onClick={()=>onSelect("afl")} style={{width:"100%",background:D.bg1,border:"0.5px solid "+D.border2,borderRadius:14,padding:"20px 24px",cursor:"pointer",textAlign:"left",display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+          <div>
+            <div style={{fontFamily:D.font,fontWeight:600,fontSize:18,color:D.t1,letterSpacing:"0.06em"}}>AFL</div>
+            <div style={{fontFamily:D.font,fontSize:12,color:D.t3,marginTop:3}}>Picks * Props * Streaks * Upcoming Round</div>
+          </div>
+          <div style={{width:40,height:40,borderRadius:10,background:D.aflDim,border:"0.5px solid "+D.afl+"44",display:"flex",alignItems:"center",justifyContent:"center"}}>
+            <span style={{fontSize:22}}>🏉</span>
+          </div>
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// -- Loading Screen ---------------------------------------------------------
+function LoadingScreen({message,progress,sport}){
+  const nbaSteps=[{label:"Today's schedule",done:progress>15},{label:"Team & player stats",done:progress>35},{label:"Injury reports",done:progress>55},{label:"Live odds",done:progress>70},{label:"Building picks",done:progress>88}];
+  const aflSteps=[{label:"Upcoming round fixtures",done:progress>15},{label:"AFL ladder & tips",done:progress>30},{label:"Player season averages",done:progress>50},{label:"Prop odds (AU bookmakers)",done:progress>70},{label:"Building multis",done:progress>88}];
+  const steps=sport==="afl"?aflSteps:nbaSteps;
   return(
     <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",padding:"0 32px",gap:28}}>
       <div style={{textAlign:"center"}}>
-        <div style={{fontFamily:D.font,fontWeight:600,fontSize:22,letterSpacing:"0.15em",color:D.t1,textTransform:"uppercase"}}>NBA<span style={{color:D.gold}}>Edge</span></div>
-        <div style={{fontFamily:D.font,fontSize:12,color:D.t3,letterSpacing:"0.1em",marginTop:4,textTransform:"uppercase"}}>Betting Intelligence</div>
+        <div style={{fontFamily:D.font,fontWeight:600,fontSize:22,letterSpacing:"0.15em",color:D.t1,textTransform:"uppercase"}}>Sport<span style={{color:D.gold}}>Edge</span></div>
+        <div style={{fontFamily:D.font,fontSize:12,color:D.t3,letterSpacing:"0.1em",marginTop:4,textTransform:"uppercase"}}>{sport==="afl"?"AFL Intelligence":"NBA Intelligence"}</div>
       </div>
       <div style={{width:"100%",maxWidth:220}}>
-        <div style={{height:1,background:D.bg3,borderRadius:99}}><div style={{height:"100%",background:D.gold,borderRadius:99,width:progress+"%",transition:"width 0.6s ease"}}/></div>
+        <div style={{height:1,background:D.bg3,borderRadius:99}}><div style={{height:"100%",background:sport==="afl"?D.afl:D.gold,borderRadius:99,width:progress+"%",transition:"width 0.6s ease"}}/></div>
         <div style={{fontFamily:D.font,fontSize:12,color:D.t3,marginTop:10,textAlign:"center"}}>{message}</div>
       </div>
       <div style={{width:"100%",maxWidth:220}}>
         {steps.map((s,i)=>(
-          <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"5px 0",borderBottom:i<4?"0.5px solid "+D.border:"none"}}>
+          <div key={i} style={{display:"flex",alignItems:"center",gap:10,padding:"5px 0",borderBottom:i<steps.length-1?"0.5px solid "+D.border:"none"}}>
             <div style={{width:14,height:14,borderRadius:"50%",border:"1px solid "+(s.done?D.green:D.border2),background:s.done?D.green:"transparent",display:"flex",alignItems:"center",justifyContent:"center",flexShrink:0,transition:"all 0.3s"}}>
               {s.done&&<svg width="8" height="8" viewBox="0 0 8 8"><polyline points="1,4 3,6 7,2" stroke="#0A0A0A" strokeWidth="1.5" fill="none" strokeLinecap="round"/></svg>}
             </div>
@@ -56,9 +94,13 @@ function LoadingScreen({message,progress}){
   );
 }
 
-function HamburgerMenu({onNavigate,onRefresh,loading,lastUpdated}){
+// -- Hamburger Menu ---------------------------------------------------------
+function HamburgerMenu({onNavigate,onRefresh,onChangeSport,loading,lastUpdated,sport}){
   const [open,setOpen]=useState(false);
-  const items=[{id:"picks",label:"Today's Picks"},{id:"games",label:"Today's Games"},{id:"props",label:"Player Props"},{id:"streak",label:"Streak Tracker"}];
+  const nbaItems=[{id:"picks",label:"Today's Picks"},{id:"games",label:"Today's Games"},{id:"props",label:"Player Props"},{id:"streak",label:"Streak Tracker"}];
+  const aflItems=[{id:"picks",label:"Round Picks"},{id:"games",label:"Upcoming Round"},{id:"props",label:"Player Props"},{id:"streak",label:"Streak Tracker"}];
+  const items=sport==="afl"?aflItems:nbaItems;
+  const accent=sport==="afl"?D.afl:D.gold;
   return(
     <>
       <button onClick={()=>setOpen(true)} style={{background:"none",border:"none",cursor:"pointer",padding:"8px",display:"flex",flexDirection:"column",gap:5,alignItems:"flex-start"}}>
@@ -67,10 +109,11 @@ function HamburgerMenu({onNavigate,onRefresh,loading,lastUpdated}){
       {open&&<div onClick={()=>setOpen(false)} style={{position:"fixed",inset:0,zIndex:100,background:"rgba(0,0,0,0.7)"}}/>}
       <div style={{position:"fixed",top:0,left:0,bottom:0,width:280,zIndex:101,background:D.bg1,borderRight:"0.5px solid "+D.border,transform:open?"translateX(0)":"translateX(-100%)",transition:"transform 0.28s cubic-bezier(0.4,0,0.2,1)",display:"flex",flexDirection:"column"}}>
         <div style={{paddingTop:"env(safe-area-inset-top,44px)",padding:"52px 24px 20px",borderBottom:"0.5px solid "+D.border}}>
-          <div style={{fontFamily:D.font,fontWeight:600,fontSize:18,letterSpacing:"0.12em",color:D.t1,textTransform:"uppercase"}}>NBA<span style={{color:D.gold}}>Edge</span></div>
-          {lastUpdated&&<div style={{fontFamily:D.font,fontSize:11,color:D.t3,marginTop:4}}>Updated {lastUpdated}</div>}
+          <div style={{fontFamily:D.font,fontWeight:600,fontSize:18,letterSpacing:"0.12em",color:D.t1,textTransform:"uppercase"}}>Sport<span style={{color:accent}}>Edge</span></div>
+          <div style={{fontFamily:D.mono,fontSize:11,color:accent,marginTop:4,letterSpacing:"0.08em"}}>{sport==="afl"?"AFL":"NBA"}</div>
+          {lastUpdated&&<div style={{fontFamily:D.font,fontSize:11,color:D.t3,marginTop:2}}>Updated {lastUpdated}</div>}
         </div>
-        <div style={{flex:1,padding:"12px 0"}}>
+        <div style={{flex:1,padding:"12px 0",overflowY:"auto"}}>
           {items.map(item=>(
             <button key={item.id} onClick={()=>{onNavigate(item.id);setOpen(false);}} style={{width:"100%",background:"none",border:"none",textAlign:"left",padding:"14px 24px",cursor:"pointer",display:"flex",alignItems:"center",gap:14}}>
               <div style={{width:3,height:14,borderRadius:99,background:D.bg3}}/>
@@ -82,15 +125,20 @@ function HamburgerMenu({onNavigate,onRefresh,loading,lastUpdated}){
             <div style={{width:3,height:14,borderRadius:99,background:D.bg3}}/>
             <span style={{fontFamily:D.font,fontSize:15,color:D.t3}}>{loading?"Refreshing...":"Refresh Data"}</span>
           </button>
+          <button onClick={()=>{onChangeSport();setOpen(false);}} style={{width:"100%",background:"none",border:"none",textAlign:"left",padding:"14px 24px",cursor:"pointer",display:"flex",alignItems:"center",gap:14}}>
+            <div style={{width:3,height:14,borderRadius:99,background:accent+"66"}}/>
+            <span style={{fontFamily:D.font,fontSize:15,color:accent}}>Switch Sport</span>
+          </button>
         </div>
         <div style={{padding:"16px 24px 32px"}}>
-          <div style={{fontFamily:D.font,fontSize:11,color:D.t3,lineHeight:1.5}}>Refresh 30-60 min before tip-off for confirmed lineups.</div>
+          <div style={{fontFamily:D.font,fontSize:11,color:D.t3,lineHeight:1.5}}>{sport==="afl"?"Props update as odds are posted closer to game time.":"Refresh 30-60 min before tip-off for confirmed lineups."}</div>
         </div>
       </div>
     </>
   );
 }
 
+// -- LegSheet ---------------------------------------------------------------
 function LegSheet({leg,onClose}){
   const col=cc(leg.confidence);const isProp=leg.type&&leg.type.startsWith("Prop");
   return(
@@ -132,12 +180,13 @@ function LegSheet({leg,onClose}){
         )}
         {leg.reasoning&&<div style={{background:D.bg1,borderRadius:10,padding:16,border:"0.5px solid "+D.border,marginBottom:12}}><div style={{fontFamily:D.font,fontSize:11,color:D.t3,marginBottom:8,letterSpacing:"0.04em"}}>ANALYSIS</div><div style={{fontFamily:D.font,fontSize:13,color:D.t2,lineHeight:1.65}}>{leg.reasoning}</div></div>}
         {(leg.factors||[]).length>0&&<div style={{background:D.bg1,borderRadius:10,padding:16,border:"0.5px solid "+D.border,marginBottom:12}}><div style={{fontFamily:D.font,fontSize:11,color:D.t3,marginBottom:12,letterSpacing:"0.04em"}}>SCORING BREAKDOWN</div>{leg.factors.map((f,i)=><div key={i} style={{marginBottom:12}}><div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}><span style={{fontFamily:D.font,fontSize:13,color:D.t2}}>{f.name}</span><span style={{fontFamily:D.mono,fontSize:12,color:D.t3}}>{f.val}/{f.max}</span></div><ConfBar value={Math.round((f.val/f.max)*100)}/></div>)}</div>}
-        <div style={{paddingLeft:12,borderLeft:"2px solid "+D.bg3,fontFamily:D.font,fontSize:12,color:D.t3,lineHeight:1.6}}>Analytical estimates only. Verify lineups at tip-off. Bet responsibly.</div>
+        <div style={{paddingLeft:12,borderLeft:"2px solid "+D.bg3,fontFamily:D.font,fontSize:12,color:D.t3,lineHeight:1.6}}>Analytical estimates only. Verify lineups at game time. Bet responsibly.</div>
       </div>
     </div>
   );
 }
 
+// -- Pick Detail ------------------------------------------------------------
 function PickDetail({pick,onBack}){
   const [selLeg,setSelLeg]=useState(null);
   const tier=TIERS[pick.key]||TIERS.safe;
@@ -160,7 +209,7 @@ function PickDetail({pick,onBack}){
                 <div style={{fontFamily:D.font,fontSize:12,color:D.t3,marginTop:4}}>combined odds</div>
               </div>
               <div style={{textAlign:"right"}}>
-                <div style={{fontFamily:D.mono,fontSize:28,color:tier.accent}}>{pick.hitProb}%</div>
+                <div style={{fontFamily:D.mono,fontSize:28,color:tier.accent}}>{pick.hitProb||0}%</div>
                 <div style={{fontFamily:D.font,fontSize:12,color:D.t3}}>hit probability</div>
               </div>
             </div>
@@ -186,14 +235,13 @@ function PickDetail({pick,onBack}){
                   </div>
                   <div style={{fontFamily:D.font,fontWeight:500,fontSize:15,color:D.t1,marginBottom:6,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{leg.selection}</div>
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                    <div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontFamily:D.mono,fontSize:12,color:D.gold}}>{leg.odds!=null?leg.odds.toFixed(2)+"x":"1.91x"}</span>{(leg.tags||[]).slice(0,2).map(t=><Pill key={t} label={t} color={D.t3} bg={D.bg3}/>)}</div>
+                    <div style={{display:"flex",gap:8,alignItems:"center"}}><span style={{fontFamily:D.mono,fontSize:12,color:D.gold}}>{leg.odds!=null?Number(leg.odds).toFixed(2)+"x":"1.91x"}</span>{(leg.tags||[]).slice(0,2).map(t=><Pill key={t} label={t} color={D.t3} bg={D.bg3}/>)}</div>
                     <span style={{fontFamily:D.font,fontSize:13,color:D.t3}}>{leg.prob}%</span>
                   </div>
                 </div>
               );
           })}
           {(pick.risks||[]).length>0&&<><div style={{fontFamily:D.font,fontSize:11,color:D.t3,letterSpacing:"0.08em",textTransform:"uppercase",margin:"20px 0 10px"}}>Key Risks</div><div style={{background:D.bg1,borderRadius:12,border:"0.5px solid "+D.border,overflow:"hidden"}}>{pick.risks.map((r,i)=><div key={i} style={{padding:"12px 16px",borderBottom:i<pick.risks.length-1?"0.5px solid "+D.border:"none",display:"flex",gap:10,alignItems:"flex-start"}}><div style={{width:2,height:2,borderRadius:"50%",background:D.gold,marginTop:6,flexShrink:0}}/><span style={{fontFamily:D.font,fontSize:13,color:D.t2,lineHeight:1.5}}>{r}</span></div>)}</div></>}
-          {(pick.alts||[]).length>0&&<><div style={{fontFamily:D.font,fontSize:11,color:D.t3,letterSpacing:"0.08em",textTransform:"uppercase",margin:"20px 0 10px"}}>Near-Miss Alternates</div><div style={{background:D.bg1,borderRadius:12,border:"0.5px solid "+D.border,overflow:"hidden"}}>{pick.alts.map((a,i)=><div key={i} style={{padding:"12px 16px",borderBottom:i<pick.alts.length-1?"0.5px solid "+D.border:"none",display:"flex",justifyContent:"space-between",alignItems:"center"}}><span style={{fontFamily:D.font,fontSize:13,color:D.t2,flex:1,marginRight:12}}>{a.desc}</span><span style={{fontFamily:D.mono,fontSize:13,color:cc(a.conf)}}>{a.conf}</span></div>)}</div></>}
           <div style={{marginTop:20,paddingLeft:12,borderLeft:"2px solid "+D.bg3,fontFamily:D.font,fontSize:12,color:D.t3,lineHeight:1.6}}>Analytical estimates only. Verify with your bookmaker. Bet responsibly.</div>
         </div>
       </div>
@@ -202,21 +250,24 @@ function PickDetail({pick,onBack}){
   );
 }
 
-function PicksScreen({picks,loading,loadingMsg,loadingProgress,error,onRetry,lastUpdated,legsScored,propsScored,gamesAnalyzed}){
+// -- Picks Screen -----------------------------------------------------------
+function PicksScreen({picks,loading,loadingMsg,loadingProgress,error,onRetry,lastUpdated,legsScored,propsScored,gamesAnalyzed,sport,roundNum}){
   const [detail,setDetail]=useState(null);
   if(detail&&picks?.[detail])return<PickDetail pick={picks[detail]} onBack={()=>setDetail(null)}/>;
   const today=new Date().toLocaleDateString("en-AU",{weekday:"long",day:"numeric",month:"long"});
+  const title=sport==="afl"?(roundNum?"Round "+roundNum+" Picks":"AFL Picks"):"Today's Picks";
+  const subtitle=sport==="afl"?("AFL "+new Date().getFullYear()):today;
   return(
     <div style={{flex:1,overflowY:"auto",paddingBottom:40}}>
       <div style={{padding:"4px 20px 20px"}}>
-        <div style={{fontFamily:D.font,fontSize:13,color:D.t3,marginBottom:2}}>{today}</div>
-        <div style={{fontFamily:D.font,fontWeight:500,fontSize:26,color:D.t1,letterSpacing:"-0.02em"}}>Today's Picks</div>
+        <div style={{fontFamily:D.font,fontSize:13,color:D.t3,marginBottom:2}}>{subtitle}</div>
+        <div style={{fontFamily:D.font,fontWeight:500,fontSize:26,color:D.t1,letterSpacing:"-0.02em"}}>{title}</div>
       </div>
-      {loading&&<LoadingScreen message={loadingMsg} progress={loadingProgress}/>}
+      {loading&&<LoadingScreen message={loadingMsg} progress={loadingProgress} sport={sport}/>}
       {error&&!loading&&<div style={{padding:"0 20px"}}><div style={{background:D.redDim,borderRadius:10,padding:16,border:"0.5px solid "+D.red+"33"}}><div style={{fontFamily:D.font,fontSize:13,color:D.red,marginBottom:8}}>Connection error</div><div style={{fontFamily:D.font,fontSize:13,color:D.t3,marginBottom:12}}>{error}</div><button onClick={onRetry} style={{background:D.red,border:"none",borderRadius:8,padding:"8px 16px",color:D.t1,fontFamily:D.font,fontSize:13,cursor:"pointer"}}>Retry</button></div></div>}
       {!loading&&!error&&picks&&<>
         <div style={{margin:"0 20px 24px",background:D.bg1,borderRadius:10,border:"0.5px solid "+D.border,display:"grid",gridTemplateColumns:"1fr 1fr 1fr"}}>
-          {[{label:"Games",value:gamesAnalyzed},{label:"Props",value:propsScored},{label:"Legs",value:legsScored}].map((s,i)=>(
+          {[{label:sport==="afl"?"Games":"Games",value:gamesAnalyzed},{label:"Props",value:propsScored},{label:"Legs",value:legsScored}].map((s,i)=>(
             <div key={i} style={{padding:"12px 0",textAlign:"center",borderRight:i<2?"0.5px solid "+D.border:"none"}}>
               <div style={{fontFamily:D.mono,fontSize:20,color:D.t1}}>{s.value}</div>
               <div style={{fontFamily:D.font,fontSize:11,color:D.t3,marginTop:2}}>{s.label}</div>
@@ -246,13 +297,14 @@ function PicksScreen({picks,loading,loadingMsg,loadingProgress,error,onRetry,las
   );
 }
 
-function GamesScreen({games,loading}){
+// -- NBA Games Screen --------------------------------------------------------
+function NBAGamesScreen({games,loading}){
   return(
     <div style={{flex:1,overflowY:"auto",paddingBottom:40}}>
       <div style={{padding:"4px 20px 20px"}}><div style={{fontFamily:D.font,fontSize:13,color:D.t3,marginBottom:2}}>NBA Schedule</div><div style={{fontFamily:D.font,fontWeight:500,fontSize:26,color:D.t1,letterSpacing:"-0.02em"}}>Today's Games</div></div>
-      {loading&&<LoadingScreen message="Loading..." progress={40}/>}
+      {loading&&<LoadingScreen message="Loading..." progress={40} sport="nba"/>}
       {!loading&&<div style={{padding:"0 20px"}}>
-        {games.length===0&&<div style={{background:D.bg1,borderRadius:12,padding:24,textAlign:"center",fontFamily:D.font,fontSize:14,color:D.t3,border:"0.5px solid "+D.border}}>No games found.</div>}
+        {games.length===0&&<div style={{background:D.bg1,borderRadius:12,padding:24,textAlign:"center",fontFamily:D.font,fontSize:14,color:D.t3,border:"0.5px solid "+D.border}}>No games today.</div>}
         {games.map((g,i)=>{
           const hI=(g.home_injuries||[]).filter(p=>p.status==="Out"||p.status==="Questionable");
           const aI=(g.away_injuries||[]).filter(p=>p.status==="Out"||p.status==="Questionable");
@@ -264,7 +316,7 @@ function GamesScreen({games,loading}){
                   <span style={{fontFamily:D.font,fontSize:12,color:D.t3}}>{g.game_time||g.status||"TBD"}</span>
                 </div>
                 <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
-                  {g.spread_line!=null&&<div style={{background:D.bg2,borderRadius:6,padding:"5px 10px",border:"0.5px solid "+D.border}}><div style={{fontFamily:D.mono,fontSize:12,color:D.blue}}>{g.home_team_abbrev} {g.spread_line>0?"+":""}{g.spread_line}</div><div style={{fontFamily:D.font,fontSize:10,color:D.t3}}>spread</div></div>}
+                  {g.spread_line!=null&&<div style={{background:D.bg2,borderRadius:6,padding:"5px 10px",border:"0.5px solid "+D.border}}><div style={{fontFamily:D.mono,fontSize:12,color:D.gold}}>{g.spread_line>0?"+":""}{g.spread_line}</div><div style={{fontFamily:D.font,fontSize:10,color:D.t3}}>spread</div></div>}
                   {g.total_line!=null&&<div style={{background:D.bg2,borderRadius:6,padding:"5px 10px",border:"0.5px solid "+D.border}}><div style={{fontFamily:D.mono,fontSize:12,color:D.gold}}>O/U {g.total_line}</div><div style={{fontFamily:D.font,fontSize:10,color:D.t3}}>total</div></div>}
                   {g.home_odds!=null&&<div style={{background:D.bg2,borderRadius:6,padding:"5px 10px",border:"0.5px solid "+D.border}}><div style={{fontFamily:D.mono,fontSize:12,color:D.green}}>{g.home_odds.toFixed(2)}x</div><div style={{fontFamily:D.font,fontSize:10,color:D.t3}}>home ML</div></div>}
                   {g.spread_line==null&&g.total_line==null&&<span style={{fontFamily:D.font,fontSize:12,color:D.t3,padding:"5px 0"}}>Odds not yet posted</span>}
@@ -279,7 +331,64 @@ function GamesScreen({games,loading}){
   );
 }
 
-function PropsScreen({props,loading}){
+// -- AFL Games Screen --------------------------------------------------------
+function AFLGamesScreen({games,loading,roundNum}){
+  return(
+    <div style={{flex:1,overflowY:"auto",paddingBottom:40}}>
+      <div style={{padding:"4px 20px 20px"}}>
+        <div style={{fontFamily:D.font,fontSize:13,color:D.t3,marginBottom:2}}>AFL {new Date().getFullYear()}</div>
+        <div style={{fontFamily:D.font,fontWeight:500,fontSize:26,color:D.t1,letterSpacing:"-0.02em"}}>{roundNum?"Round "+roundNum:"Upcoming Round"}</div>
+      </div>
+      {loading&&<LoadingScreen message="Loading AFL fixtures..." progress={40} sport="afl"/>}
+      {!loading&&<div style={{padding:"0 20px"}}>
+        {games.length===0&&<div style={{background:D.bg1,borderRadius:12,padding:24,textAlign:"center",fontFamily:D.font,fontSize:14,color:D.t3,border:"0.5px solid "+D.border}}>No upcoming games found.</div>}
+        {games.map((g,i)=>{
+          const tip=g.squiggle_tip||{};
+          const homeL=g.ladder_home||{};
+          const awayL=g.ladder_away||{};
+          return(
+            <div key={i} style={{background:D.bg1,borderRadius:12,border:"0.5px solid "+D.border,marginBottom:10,overflow:"hidden"}}>
+              <div style={{padding:"14px 16px"}}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:10}}>
+                  <div style={{flex:1}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:4}}>
+                      <span style={{fontFamily:D.mono,fontSize:14,color:D.t2}}>{g.away_abbrev}</span>
+                      <span style={{fontFamily:D.font,fontSize:12,color:D.t3}}>at</span>
+                      <span style={{fontFamily:D.mono,fontSize:16,color:D.t1,fontWeight:500}}>{g.home_abbrev}</span>
+                      {tip.tip&&<Pill label={tip.tip===g.home_team?"Home Tip":"Away Tip"} color={D.gold} bg={D.goldDim}/>}
+                    </div>
+                    <div style={{fontFamily:D.font,fontSize:12,color:D.t3}}>{g.venue}</div>
+                  </div>
+                  <div style={{textAlign:"right",flexShrink:0}}>
+                    <div style={{fontFamily:D.font,fontSize:12,color:D.t2}}>{g.game_time||"TBD"}</div>
+                  </div>
+                </div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+                  {g.home_odds!=null&&<div style={{background:D.bg2,borderRadius:6,padding:"5px 10px",border:"0.5px solid "+D.border}}><div style={{fontFamily:D.mono,fontSize:12,color:D.green}}>{Number(g.home_odds).toFixed(2)}x</div><div style={{fontFamily:D.font,fontSize:10,color:D.t3}}>{g.home_abbrev} win</div></div>}
+                  {g.away_odds!=null&&<div style={{background:D.bg2,borderRadius:6,padding:"5px 10px",border:"0.5px solid "+D.border}}><div style={{fontFamily:D.mono,fontSize:12,color:D.blue}}>{Number(g.away_odds).toFixed(2)}x</div><div style={{fontFamily:D.font,fontSize:10,color:D.t3}}>{g.away_abbrev} win</div></div>}
+                  {g.total_line!=null&&<div style={{background:D.bg2,borderRadius:6,padding:"5px 10px",border:"0.5px solid "+D.border}}><div style={{fontFamily:D.mono,fontSize:12,color:D.gold}}>O/U {g.total_line}</div><div style={{fontFamily:D.font,fontSize:10,color:D.t3}}>total pts</div></div>}
+                  {g.spread_line!=null&&<div style={{background:D.bg2,borderRadius:6,padding:"5px 10px",border:"0.5px solid "+D.border}}><div style={{fontFamily:D.mono,fontSize:12,color:D.gold}}>{g.home_abbrev} {g.spread_line>0?"+":""}{g.spread_line}</div><div style={{fontFamily:D.font,fontSize:10,color:D.t3}}>line</div></div>}
+                  {g.home_odds==null&&g.total_line==null&&<span style={{fontFamily:D.font,fontSize:12,color:D.t3,padding:"5px 0"}}>Odds not yet posted</span>}
+                </div>
+                {(homeL.position||awayL.position)&&<div style={{display:"flex",gap:12}}>
+                  {homeL.position&&<div style={{fontFamily:D.font,fontSize:11,color:D.t3}}>{g.home_abbrev} <span style={{color:D.t2}}>#{homeL.position}</span> {homeL.wins!=null&&<span>({homeL.wins}-{homeL.losses})</span>}</div>}
+                  {awayL.position&&<div style={{fontFamily:D.font,fontSize:11,color:D.t3}}>{g.away_abbrev} <span style={{color:D.t2}}>#{awayL.position}</span> {awayL.wins!=null&&<span>({awayL.wins}-{awayL.losses})</span>}</div>}
+                </div>}
+              </div>
+              {tip.margin>0&&<div style={{padding:"8px 16px",borderTop:"0.5px solid "+D.border,display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontFamily:D.font,fontSize:11,color:D.t3}}>Squiggle model:</span>
+                <span style={{fontFamily:D.font,fontSize:11,color:D.gold}}>{tip.tip} by {Math.abs(tip.margin).toFixed(0)} pts</span>
+              </div>}
+            </div>
+          );
+        })}
+      </div>}
+    </div>
+  );
+}
+
+// -- NBA Props Screen --------------------------------------------------------
+function NBAPropsScreen({props,loading}){
   const [filterGame,setFilterGame]=useState("all");
   const [filterStat,setFilterStat]=useState("all");
   const [showBench,setShowBench]=useState(true);
@@ -292,7 +401,6 @@ function PropsScreen({props,loading}){
     return true;
   });
   const statOpts=["all","pts","reb","ast","3pm","stl","blk","pra","pr","pa","dd","td"];
-
   if(selProp){
     return(
       <div style={{flex:1,overflowY:"auto",paddingBottom:40}}>
@@ -303,21 +411,19 @@ function PropsScreen({props,loading}){
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
             {[{label:"Confidence",val:selProp.confidence+"/100",color:cc(selProp.confidence)},{label:"Hit Prob",val:selProp.prob+"%",color:cc(selProp.confidence)},{label:"Edge",val:selProp.edge!=null?(selProp.edge>0?"+":"")+selProp.edge+" pts":"--",color:selProp.edge>0?D.green:D.red}].map((s,i)=><div key={i} style={{background:D.bg1,borderRadius:10,padding:12,textAlign:"center",border:"0.5px solid "+D.border}}><div style={{fontFamily:D.mono,fontSize:18,color:s.color}}>{s.val}</div><div style={{fontFamily:D.font,fontSize:11,color:D.t3,marginTop:2}}>{s.label}</div></div>)}
           </div>
-          {selProp.est_line!=null&&<div style={{background:D.bg1,borderRadius:10,padding:16,border:"0.5px solid "+D.border,marginBottom:12}}><div style={{fontFamily:D.font,fontSize:11,color:D.t3,marginBottom:14,letterSpacing:"0.06em",textTransform:"uppercase"}}>Model vs Estimated Line</div><div style={{display:"flex",justifyContent:"space-around",marginBottom:14}}><div style={{textAlign:"center"}}><div style={{fontFamily:D.font,fontSize:11,color:D.t3,marginBottom:4}}>Our Model</div><div style={{fontFamily:D.mono,fontSize:30,color:D.gold}}>{selProp.projection}</div></div><div style={{fontFamily:D.font,fontSize:16,color:D.t3,alignSelf:"center"}}>vs</div><div style={{textAlign:"center"}}><div style={{fontFamily:D.font,fontSize:11,color:D.t3,marginBottom:4}}>Est. Line</div><div style={{fontFamily:D.mono,fontSize:30,color:D.t1}}>{selProp.est_line}</div></div></div><div style={{height:"0.5px",background:D.border,margin:"0 0 10px"}}/>{[{label:"L5 Average",val:selProp.l5_avg},{label:"L10 Average",val:selProp.l10_avg},{label:"Usage Rate",val:selProp.usage_rate+"%"},{label:"Proj. Minutes",val:selProp.projected_mins+" min"}].filter(r=>r.val!=null).map((row,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:i<3?"0.5px solid "+D.border:"none"}}><span style={{fontFamily:D.font,fontSize:13,color:D.t3}}>{row.label}</span><span style={{fontFamily:D.mono,fontSize:13,color:D.t2}}>{row.val}</span></div>)}</div>}
           {selProp.reasoning&&<div style={{background:D.bg1,borderRadius:10,padding:16,border:"0.5px solid "+D.border,marginBottom:12}}><div style={{fontFamily:D.font,fontSize:11,color:D.t3,marginBottom:8,letterSpacing:"0.06em",textTransform:"uppercase"}}>Analysis</div><div style={{fontFamily:D.font,fontSize:13,color:D.t2,lineHeight:1.65}}>{selProp.reasoning}</div></div>}
           <div style={{paddingLeft:12,borderLeft:"2px solid "+D.bg3,fontFamily:D.font,fontSize:12,color:D.t3,lineHeight:1.6}}>Lines are model estimates. Verify with your bookmaker.</div>
         </div>
       </div>
     );
   }
-
   return(
     <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
       <div style={{padding:"4px 20px 16px",flexShrink:0}}><div style={{fontFamily:D.font,fontSize:13,color:D.t3,marginBottom:2}}>Model projections</div><div style={{fontFamily:D.font,fontWeight:500,fontSize:26,color:D.t1,letterSpacing:"-0.02em"}}>Player Props</div></div>
-      {loading&&<LoadingScreen message="Projecting props..." progress={70}/>}
+      {loading&&<LoadingScreen message="Projecting props..." progress={70} sport="nba"/>}
       {!loading&&<>
         <div style={{overflowX:"auto",padding:"0 20px 10px",flexShrink:0,scrollbarWidth:"none"}}><div style={{display:"flex",gap:8,minWidth:"max-content"}}>{["all",...gameList].map(g=><button key={g} onClick={()=>setFilterGame(g)} style={{padding:"7px 14px",borderRadius:6,border:"0.5px solid "+(filterGame===g?D.gold:D.border),background:filterGame===g?D.goldDim:D.bg1,color:filterGame===g?D.gold:D.t3,fontFamily:D.font,fontSize:12,cursor:"pointer"}}>{g==="all"?"All Games":g}</button>)}</div></div>
-        <div style={{overflowX:"auto",padding:"0 20px 10px",flexShrink:0,scrollbarWidth:"none"}}><div style={{display:"flex",gap:6,minWidth:"max-content"}}>{statOpts.map(s=><button key={s} onClick={()=>setFilterStat(s)} style={{padding:"5px 12px",borderRadius:6,border:"0.5px solid "+(filterStat===s?D.blue:D.border),background:filterStat===s?D.blueDim:"transparent",color:filterStat===s?D.blue:D.t3,fontFamily:D.font,fontSize:11,cursor:"pointer"}}>{s==="all"?"All":STAT_LABELS[s]||s.toUpperCase()}</button>)}</div></div>
+        <div style={{overflowX:"auto",padding:"0 20px 10px",flexShrink:0,scrollbarWidth:"none"}}><div style={{display:"flex",gap:6,minWidth:"max-content"}}>{statOpts.map(s=><button key={s} onClick={()=>setFilterStat(s)} style={{padding:"5px 12px",borderRadius:6,border:"0.5px solid "+(filterStat===s?D.blue:D.border),background:filterStat===s?D.blueDim:"transparent",color:filterStat===s?D.blue:D.t3,fontFamily:D.font,fontSize:11,cursor:"pointer"}}>{s==="all"?"All":NBA_STAT_LABELS[s]||s.toUpperCase()}</button>)}</div></div>
         <div style={{padding:"0 20px 10px",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"flex-end",gap:8}}><span style={{fontFamily:D.font,fontSize:12,color:D.t3}}>Show bench</span><div onClick={()=>setShowBench(s=>!s)} style={{width:36,height:20,borderRadius:99,cursor:"pointer",background:showBench?D.blue:D.bg3,position:"relative",transition:"background 0.2s"}}><div style={{position:"absolute",top:3,left:showBench?19:3,width:14,height:14,borderRadius:"50%",background:D.t1,transition:"left 0.2s"}}/></div></div>
         <div style={{flex:1,overflowY:"auto",padding:"0 20px",paddingBottom:40}}>
           {filtered.length===0&&<div style={{background:D.bg1,borderRadius:12,padding:24,textAlign:"center",fontFamily:D.font,fontSize:14,color:D.t3,border:"0.5px solid "+D.border}}>{props.length===0?"No props generated yet.":"No props match your filters."}</div>}
@@ -327,8 +433,83 @@ function PropsScreen({props,loading}){
               <div key={i} onClick={()=>setSelProp(prop)} style={{background:D.bg1,borderRadius:10,padding:"14px 16px",marginBottom:8,cursor:"pointer",border:"0.5px solid "+D.border}}>
                 <div style={{display:"flex",justifyContent:"space-between",marginBottom:6}}><div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontFamily:D.font,fontWeight:500,fontSize:15,color:D.t1}}>{prop.player}</span>{prop.is_bench&&<span style={{fontFamily:D.mono,fontSize:9,color:D.blue,letterSpacing:"0.06em",textTransform:"uppercase"}}>bench</span>}</div><span style={{fontFamily:D.font,fontSize:11,color:D.t3}}>{prop.game}</span></div>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}><span style={{fontFamily:D.font,fontSize:14,color:isOver?D.green:D.red}}>{prop.direction}</span>{prop.est_line!=null&&<span style={{fontFamily:D.mono,fontSize:15,color:D.t1}}>{prop.est_line}</span>}<span style={{fontFamily:D.font,fontSize:13,color:D.t3}}>{prop.stat_label}</span></div>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>{prop.est_line!=null&&<span style={{fontFamily:D.mono,fontSize:12,color:D.t3}}>Model: <span style={{color:D.gold}}>{prop.projection}</span>{" "}<span style={{color:prop.edge>0?D.green:D.red}}>({prop.edge>0?"+":""}{prop.edge})</span></span>}<ConfBar value={prop.confidence}/></div>
+              </div>
+            );
+          })}
+        </div>
+      </>}
+    </div>
+  );
+}
+
+// -- AFL Props Screen --------------------------------------------------------
+function AFLPropsScreen({props,loading}){
+  const [filterGame,setFilterGame]=useState("all");
+  const [filterStat,setFilterStat]=useState("all");
+  const [realOnly,setRealOnly]=useState(false);
+  const [selProp,setSelProp]=useState(null);
+  const gameList=[...new Set(props.map(p=>p.game))];
+  const statOpts=["all","disposals","kicks","handballs","marks","goals","tackles","clearances","hitouts","fantasy_pts"];
+  const filtered=props.filter(p=>{
+    if(filterGame!=="all"&&p.game!==filterGame)return false;
+    if(filterStat!=="all"&&p.stat!==filterStat)return false;
+    if(realOnly&&!p.has_real_line)return false;
+    return true;
+  });
+  if(selProp){
+    return(
+      <div style={{flex:1,overflowY:"auto",paddingBottom:40}}>
+        <div style={{padding:"12px 20px",borderBottom:"0.5px solid "+D.border}}><button onClick={()=>setSelProp(null)} style={{background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:6,padding:0}}><svg width="8" height="12" viewBox="0 0 8 12"><polyline points="7,1 1,6 7,11" stroke={D.t2} strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg><span style={{fontFamily:D.font,fontSize:14,color:D.t2}}>AFL Props</span></button></div>
+        <div style={{padding:20}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:2}}><div style={{fontFamily:D.font,fontWeight:500,fontSize:20,color:D.t1}}>{selProp.player}</div><span style={{fontFamily:D.mono,fontSize:10,color:D.t3}}>{selProp.team}</span></div>
+          <div style={{fontFamily:D.font,fontSize:11,color:D.t3,marginBottom:4}}>{selProp.game}</div>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16}}>
+            <span style={{fontFamily:D.font,fontSize:15,color:selProp.direction==="Over"?D.green:D.red,fontWeight:500}}>{selProp.direction}</span>
+            <span style={{fontFamily:D.mono,fontSize:18,color:D.t1}}>{selProp.book_line}</span>
+            <span style={{fontFamily:D.font,fontSize:14,color:D.gold}}>{selProp.stat_label}</span>
+            {selProp.has_real_line?<Pill label="Real Odds" color={D.green} bg={D.greenDim}/>:<Pill label="Model Line" color={D.t3} bg={D.bg2}/>}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10,marginBottom:16}}>
+            {[{label:"Confidence",val:selProp.confidence+"/100",color:cc(selProp.confidence)},{label:"Hit Prob",val:selProp.prob+"%",color:cc(selProp.confidence)},{label:"Edge",val:(selProp.edge>0?"+":"")+selProp.edge,color:selProp.edge>0?D.green:D.red}].map((s,i)=><div key={i} style={{background:D.bg1,borderRadius:10,padding:12,textAlign:"center",border:"0.5px solid "+D.border}}><div style={{fontFamily:D.mono,fontSize:18,color:s.color}}>{s.val}</div><div style={{fontFamily:D.font,fontSize:11,color:D.t3,marginTop:2}}>{s.label}</div></div>)}
+          </div>
+          <div style={{background:D.bg1,borderRadius:10,padding:16,border:"0.5px solid "+D.border,marginBottom:12}}>
+            <div style={{fontFamily:D.font,fontSize:11,color:D.t3,marginBottom:12,letterSpacing:"0.06em",textTransform:"uppercase"}}>Form</div>
+            {[{label:"Projection",val:selProp.projection},{label:"Book Line",val:selProp.book_line},{label:"L5 Avg",val:selProp.l5_avg},{label:"L10 Avg",val:selProp.l10_avg},{label:"Season Avg",val:selProp.season_avg}].filter(r=>r.val!=null).map((row,i,arr)=><div key={i} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:i<arr.length-1?"0.5px solid "+D.border:"none"}}><span style={{fontFamily:D.font,fontSize:13,color:D.t3}}>{row.label}</span><span style={{fontFamily:D.mono,fontSize:13,color:D.t2}}>{row.val}</span></div>)}
+          </div>
+          {selProp.has_real_line&&selProp.odds&&<div style={{background:D.bg1,borderRadius:10,padding:16,border:"0.5px solid "+D.border,marginBottom:12}}><div style={{fontFamily:D.font,fontSize:11,color:D.t3,marginBottom:8,letterSpacing:"0.06em",textTransform:"uppercase"}}>Bookmaker Odds</div><div style={{fontFamily:D.mono,fontSize:24,color:D.gold}}>{Number(selProp.odds).toFixed(2)}x</div></div>}
+          {selProp.reasoning&&<div style={{background:D.bg1,borderRadius:10,padding:16,border:"0.5px solid "+D.border,marginBottom:12}}><div style={{fontFamily:D.font,fontSize:11,color:D.t3,marginBottom:8,letterSpacing:"0.06em",textTransform:"uppercase"}}>Analysis</div><div style={{fontFamily:D.font,fontSize:13,color:D.t2,lineHeight:1.65}}>{selProp.reasoning}</div></div>}
+          <div style={{paddingLeft:12,borderLeft:"2px solid "+D.bg3,fontFamily:D.font,fontSize:12,color:D.t3,lineHeight:1.6}}>Verify all lines with your bookmaker before placing bets.</div>
+        </div>
+      </div>
+    );
+  }
+  return(
+    <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <div style={{padding:"4px 20px 16px",flexShrink:0}}><div style={{fontFamily:D.font,fontSize:13,color:D.t3,marginBottom:2}}>AFL projections</div><div style={{fontFamily:D.font,fontWeight:500,fontSize:26,color:D.t1,letterSpacing:"-0.02em"}}>Player Props</div></div>
+      {loading&&<LoadingScreen message="Loading AFL props..." progress={60} sport="afl"/>}
+      {!loading&&<>
+        <div style={{overflowX:"auto",padding:"0 20px 10px",flexShrink:0,scrollbarWidth:"none"}}><div style={{display:"flex",gap:8,minWidth:"max-content"}}>{["all",...gameList].map(g=><button key={g} onClick={()=>setFilterGame(g)} style={{padding:"6px 12px",borderRadius:6,border:"0.5px solid "+(filterGame===g?D.afl:D.border),background:filterGame===g?D.aflDim:D.bg1,color:filterGame===g?D.afl:D.t3,fontFamily:D.font,fontSize:12,cursor:"pointer"}}>{g==="all"?"All Games":g}</button>)}</div></div>
+        <div style={{overflowX:"auto",padding:"0 20px 10px",flexShrink:0,scrollbarWidth:"none"}}><div style={{display:"flex",gap:6,minWidth:"max-content"}}>{statOpts.map(s=><button key={s} onClick={()=>setFilterStat(s)} style={{padding:"5px 12px",borderRadius:6,border:"0.5px solid "+(filterStat===s?D.blue:D.border),background:filterStat===s?D.blueDim:"transparent",color:filterStat===s?D.blue:D.t3,fontFamily:D.font,fontSize:11,cursor:"pointer"}}>{s==="all"?"All":AFL_STAT_LABELS[s]||s}</button>)}</div></div>
+        <div style={{padding:"0 20px 10px",flexShrink:0,display:"flex",alignItems:"center",justifyContent:"flex-end",gap:8}}><span style={{fontFamily:D.font,fontSize:12,color:D.t3}}>Real odds only</span><div onClick={()=>setRealOnly(s=>!s)} style={{width:36,height:20,borderRadius:99,cursor:"pointer",background:realOnly?D.green:D.bg3,position:"relative",transition:"background 0.2s"}}><div style={{position:"absolute",top:3,left:realOnly?19:3,width:14,height:14,borderRadius:"50%",background:D.t1,transition:"left 0.2s"}}/></div></div>
+        <div style={{flex:1,overflowY:"auto",padding:"0 20px",paddingBottom:40}}>
+          {filtered.length===0&&<div style={{background:D.bg1,borderRadius:12,padding:24,textAlign:"center",fontFamily:D.font,fontSize:14,color:D.t3,border:"0.5px solid "+D.border}}>{props.length===0?"Props load closer to game time.":"No props match your filters."}</div>}
+          {filtered.map((prop,i)=>{
+            const isOver=prop.direction==="Over";
+            return(
+              <div key={i} onClick={()=>setSelProp(prop)} style={{background:D.bg1,borderRadius:10,padding:"13px 16px",marginBottom:8,cursor:"pointer",border:"0.5px solid "+(prop.has_real_line?D.green+"22":D.border)}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
+                  <div style={{display:"flex",alignItems:"center",gap:8}}><span style={{fontFamily:D.font,fontWeight:500,fontSize:15,color:D.t1}}>{prop.player}</span><span style={{fontFamily:D.mono,fontSize:9,color:D.t3}}>{prop.team}</span></div>
+                  <div style={{display:"flex",alignItems:"center",gap:6}}>{prop.has_real_line&&<Dot color={D.green} size={5}/>}<span style={{fontFamily:D.font,fontSize:11,color:D.t3}}>{prop.game}</span></div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                  <span style={{fontFamily:D.font,fontSize:14,color:isOver?D.green:D.red,fontWeight:500}}>{prop.direction}</span>
+                  <span style={{fontFamily:D.mono,fontSize:16,color:D.t1}}>{prop.book_line}</span>
+                  <span style={{fontFamily:D.font,fontSize:13,color:D.gold}}>{prop.stat_label}</span>
+                  {prop.has_real_line&&prop.odds&&<span style={{fontFamily:D.mono,fontSize:12,color:D.t2}}>{Number(prop.odds).toFixed(2)}x</span>}
+                </div>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  {prop.est_line!=null&&<span style={{fontFamily:D.mono,fontSize:12,color:D.t3}}>Model: <span style={{color:D.gold}}>{prop.projection}</span>{" "}<span style={{color:prop.edge>0?D.green:D.red}}>({prop.edge>0?"+":""}{prop.edge})</span></span>}
+                  <span style={{fontFamily:D.mono,fontSize:12,color:D.t3}}>Proj: <span style={{color:D.gold}}>{prop.projection}</span> <span style={{color:prop.edge>0?D.green:D.red}}>({prop.edge>0?"+":""}{prop.edge})</span></span>
                   <ConfBar value={prop.confidence}/>
                 </div>
               </div>
@@ -340,7 +521,8 @@ function PropsScreen({props,loading}){
   );
 }
 
-function StreakScreen(){
+// -- Streak Screen (shared NBA + AFL) ----------------------------------------
+function StreakScreen({sport}){
   const [win,setWin]=useState(10);
   const [streaks,setStreaks]=useState([]);
   const [loading,setLoading]=useState(true);
@@ -351,10 +533,13 @@ function StreakScreen(){
   const [sel,setSel]=useState(null);
   const pollRef=useRef(null);
 
+  const statLabels=sport==="afl"?AFL_STAT_LABELS:NBA_STAT_LABELS;
+  const statOpts=sport==="afl"?["all","disposals","kicks","handballs","marks","goals","tackles","clearances","hitouts","fantasy_pts"]:["all","pts","reb","ast","3pm","stl","blk"];
+  const endpoint=sport==="afl"?"/api/afl/streaks":"/api/streaks";
+
   const fetchStreaks=useCallback(async()=>{
     try{
-      const d=await apiFetch("/api/streaks?window="+win+"&min_rate=0.5&limit=100",30000);
-      // Flatten window-specific fields onto each streak so cards can read them directly
+      const d=await apiFetch(endpoint+"?window="+win+"&min_rate=0.5&limit=100",30000);
       const enriched=(d.streaks||[]).map(s=>{
         const wd=s.windows&&s.windows[win]?s.windows[win]:{};
         const hits=wd.hits??s.best_hits??0;
@@ -362,25 +547,17 @@ function StreakScreen(){
         const hit_rate=wd.hit_rate??s.best_hit_rate??0;
         const pct=wd.pct??Math.round(hit_rate*100);
         const is_perfect=hits===games&&games>0;
-        return{
-          ...s,
-          hits,games,hit_rate,pct,is_perfect,
-          // detail view uses all_windows — map from windows object
-          all_windows:s.windows||{},
-        };
+        return{...s,hits,games,hit_rate,pct,is_perfect,all_windows:s.windows||{}};
       });
       setStreaks(enriched);
       setBgLoading(d.loading||false);
       setLoading(false);
       if(d.loading){pollRef.current=setTimeout(fetchStreaks,15000);}
-    }catch(e){
-      setError(e.message);
-      setLoading(false);
-    }
-  },[win]);
+    }catch(e){setError(e.message);setLoading(false);}
+  },[win,sport,endpoint]);
 
   useEffect(()=>{
-    setLoading(true);setError(null);setSel(null);
+    setLoading(true);setError(null);setSel(null);setStreaks([]);setFilterStat("all");
     clearTimeout(pollRef.current);
     fetchStreaks();
     return()=>clearTimeout(pollRef.current);
@@ -392,6 +569,8 @@ function StreakScreen(){
     return true;
   });
   const perfectCount=streaks.filter(s=>s.is_perfect).length;
+  const accent=sport==="afl"?D.afl:D.gold;
+  const accentDim=sport==="afl"?D.aflDim:D.goldDim;
 
   if(sel){
     const w=sel.all_windows||{};
@@ -400,8 +579,8 @@ function StreakScreen(){
         <div style={{padding:"12px 20px",borderBottom:"0.5px solid "+D.border}}><button onClick={()=>setSel(null)} style={{background:"none",border:"none",cursor:"pointer",display:"flex",alignItems:"center",gap:6,padding:0}}><svg width="8" height="12" viewBox="0 0 8 12"><polyline points="7,1 1,6 7,11" stroke={D.t2} strokeWidth="1.5" fill="none" strokeLinecap="round" strokeLinejoin="round"/></svg><span style={{fontFamily:D.font,fontSize:14,color:D.t2}}>Streaks</span></button></div>
         <div style={{padding:20}}>
           <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:4}}><div style={{fontFamily:D.font,fontWeight:500,fontSize:20,color:D.t1}}>{sel.player}</div><span style={{fontFamily:D.mono,fontSize:10,color:D.t3}}>{sel.team}</span></div>
-          <div style={{fontFamily:D.font,fontSize:14,color:D.gold,marginBottom:4}}>{sel.label}</div>
-          <div style={{fontFamily:D.font,fontSize:12,color:D.t3,marginBottom:20}}>Season avg: {sel.season_avg} · Recent avg: {sel.recent_avg}</div>
+          <div style={{fontFamily:D.font,fontSize:14,color:accent,marginBottom:4}}>{sel.label}</div>
+          <div style={{fontFamily:D.font,fontSize:12,color:D.t3,marginBottom:20}}>Season avg: {sel.season_avg} * Recent avg: {sel.recent_avg}</div>
           <div style={{background:D.bg1,borderRadius:12,border:"0.5px solid "+D.border,overflow:"hidden",marginBottom:16}}>
             <div style={{padding:"10px 16px",borderBottom:"0.5px solid "+D.border}}><div style={{fontFamily:D.font,fontSize:11,color:D.t3,letterSpacing:"0.06em",textTransform:"uppercase"}}>Hit Rate by Window</div></div>
             {[5,10,15].map(wn=>{
@@ -409,14 +588,8 @@ function StreakScreen(){
               const isPerfect=wd.hits===wn;
               return(
                 <div key={wn} style={{padding:"14px 16px",borderBottom:"0.5px solid "+D.border,display:"flex",justifyContent:"space-between",alignItems:"center",background:isPerfect?D.greenDim:"transparent"}}>
-                  <div>
-                    <div style={{fontFamily:D.font,fontSize:14,color:D.t1,marginBottom:6}}>Last {wn} games</div>
-                    <div style={{display:"flex",gap:4}}>{Array.from({length:wn}).map((_,j)=><div key={j} style={{width:8,height:8,borderRadius:2,background:j<wd.hits?(isPerfect?D.green:D.gold):D.bg3}}/>)}</div>
-                  </div>
-                  <div style={{textAlign:"right"}}>
-                    <div style={{fontFamily:D.mono,fontSize:20,color:isPerfect?D.green:wd.hit_rate>=0.8?D.gold:D.t2}}>{wd.hits}/{wn}</div>
-                    <div style={{fontFamily:D.font,fontSize:11,color:D.t3}}>{wd.pct}%</div>
-                  </div>
+                  <div><div style={{fontFamily:D.font,fontSize:14,color:D.t1,marginBottom:6}}>Last {wn} games</div><div style={{display:"flex",gap:4}}>{Array.from({length:wn}).map((_,j)=><div key={j} style={{width:8,height:8,borderRadius:2,background:j<wd.hits?(isPerfect?D.green:accent):D.bg3}}/>)}</div></div>
+                  <div style={{textAlign:"right"}}><div style={{fontFamily:D.mono,fontSize:20,color:isPerfect?D.green:wd.hit_rate>=0.8?accent:D.t2}}>{wd.hits}/{wn}</div><div style={{fontFamily:D.font,fontSize:11,color:D.t3}}>{wd.pct}%</div></div>
                 </div>
               );
             })}
@@ -425,14 +598,11 @@ function StreakScreen(){
             <div style={{background:D.bg1,borderRadius:12,border:"0.5px solid "+D.border,padding:16,marginBottom:16}}>
               <div style={{fontFamily:D.font,fontSize:11,color:D.t3,letterSpacing:"0.06em",textTransform:"uppercase",marginBottom:12}}>Last 5 Game Values</div>
               <div style={{display:"flex",gap:8}}>
-                {sel.last_5_vals.map((v,i)=>{
-                  const hit=v>=sel.threshold;
-                  return(<div key={i} style={{flex:1,textAlign:"center",background:hit?D.greenDim:D.bg2,borderRadius:8,padding:"10px 4px",border:"0.5px solid "+(hit?D.green+"33":D.border)}}><div style={{fontFamily:D.mono,fontSize:18,color:hit?D.green:D.t3}}>{v}</div><div style={{fontFamily:D.font,fontSize:9,color:D.t3,marginTop:2}}>{hit?"HIT":"MISS"}</div></div>);
-                })}
+                {sel.last_5_vals.map((v,i)=>{const hit=v>=sel.threshold;return(<div key={i} style={{flex:1,textAlign:"center",background:hit?D.greenDim:D.bg2,borderRadius:8,padding:"10px 4px",border:"0.5px solid "+(hit?D.green+"33":D.border)}}><div style={{fontFamily:D.mono,fontSize:18,color:hit?D.green:D.t3}}>{v}</div><div style={{fontFamily:D.font,fontSize:9,color:D.t3,marginTop:2}}>{hit?"HIT":"MISS"}</div></div>);})}
               </div>
             </div>
           )}
-          <div style={{paddingLeft:12,borderLeft:"2px solid "+D.bg3,fontFamily:D.font,fontSize:12,color:D.t3,lineHeight:1.6}}>Data from NBA.com via nba_api. Past performance does not guarantee future results.</div>
+          <div style={{paddingLeft:12,borderLeft:"2px solid "+D.bg3,fontFamily:D.font,fontSize:12,color:D.t3,lineHeight:1.6}}>{sport==="afl"?"Data from Footywire game logs.":"Data from NBA.com game logs."} Past performance does not guarantee future results.</div>
         </div>
       </div>
     );
@@ -440,28 +610,27 @@ function StreakScreen(){
 
   return(
     <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-      <div style={{padding:"4px 20px 16px",flexShrink:0}}><div style={{fontFamily:D.font,fontSize:13,color:D.t3,marginBottom:2}}>NBA.com game logs</div><div style={{fontFamily:D.font,fontWeight:500,fontSize:26,color:D.t1,letterSpacing:"-0.02em"}}>Streak Tracker</div></div>
+      <div style={{padding:"4px 20px 16px",flexShrink:0}}>
+        <div style={{fontFamily:D.font,fontSize:13,color:D.t3,marginBottom:2}}>{sport==="afl"?"Footywire game logs":"NBA.com game logs"}</div>
+        <div style={{fontFamily:D.font,fontWeight:500,fontSize:26,color:D.t1,letterSpacing:"-0.02em"}}>Streak Tracker</div>
+      </div>
       <div style={{padding:"0 20px 12px",flexShrink:0,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-        <div style={{display:"flex",gap:8}}>{[5,10,15].map(w=><button key={w} onClick={()=>setWin(w)} style={{padding:"7px 18px",borderRadius:6,border:"0.5px solid "+(win===w?D.gold:D.border),background:win===w?D.goldDim:"transparent",color:win===w?D.gold:D.t3,fontFamily:D.font,fontSize:13,cursor:"pointer"}}>L{w}</button>)}</div>
+        <div style={{display:"flex",gap:8}}>{[5,10,15].map(w=><button key={w} onClick={()=>setWin(w)} style={{padding:"7px 18px",borderRadius:6,border:"0.5px solid "+(win===w?accent:D.border),background:win===w?accentDim:"transparent",color:win===w?accent:D.t3,fontFamily:D.font,fontSize:13,cursor:"pointer"}}>L{w}</button>)}</div>
         <button onClick={()=>setPerfectOnly(p=>!p)} style={{padding:"7px 12px",borderRadius:6,border:"0.5px solid "+(perfectOnly?D.green:D.border),background:perfectOnly?D.greenDim:"transparent",color:perfectOnly?D.green:D.t3,fontFamily:D.font,fontSize:12,cursor:"pointer"}}>{win}/{win} only</button>
       </div>
-      <div style={{overflowX:"auto",padding:"0 20px 12px",flexShrink:0,scrollbarWidth:"none"}}><div style={{display:"flex",gap:6,minWidth:"max-content"}}>{["all","pts","reb","ast","3pm","stl","blk"].map(s=><button key={s} onClick={()=>setFilterStat(s)} style={{padding:"5px 12px",borderRadius:6,border:"0.5px solid "+(filterStat===s?D.blue:D.border),background:filterStat===s?D.blueDim:"transparent",color:filterStat===s?D.blue:D.t3,fontFamily:D.font,fontSize:11,cursor:"pointer"}}>{s==="all"?"All":STAT_LABELS[s]||s.toUpperCase()}</button>)}</div></div>
-
-      {bgLoading&&!loading&&<div style={{margin:"0 20px 12px",background:D.goldDim,borderRadius:10,padding:"10px 14px",border:"0.5px solid "+D.gold+"33",flexShrink:0}}><div style={{fontFamily:D.font,fontSize:12,color:D.gold}}>Calculating streaks from real game logs — updating in ~2 minutes...</div></div>}
-
-      {loading&&<LoadingScreen message="Loading streaks..." progress={60}/>}
+      <div style={{overflowX:"auto",padding:"0 20px 12px",flexShrink:0,scrollbarWidth:"none"}}><div style={{display:"flex",gap:6,minWidth:"max-content"}}>{statOpts.map(s=><button key={s} onClick={()=>setFilterStat(s)} style={{padding:"5px 12px",borderRadius:6,border:"0.5px solid "+(filterStat===s?D.blue:D.border),background:filterStat===s?D.blueDim:"transparent",color:filterStat===s?D.blue:D.t3,fontFamily:D.font,fontSize:11,cursor:"pointer"}}>{s==="all"?"All":statLabels[s]||s}</button>)}</div></div>
+      {bgLoading&&!loading&&<div style={{margin:"0 20px 12px",background:accentDim,borderRadius:10,padding:"10px 14px",border:"0.5px solid "+accent+"33",flexShrink:0}}><div style={{fontFamily:D.font,fontSize:12,color:accent}}>Calculating streaks from real game logs -- updating shortly...</div></div>}
+      {loading&&<LoadingScreen message="Loading streaks..." progress={60} sport={sport}/>}
       {error&&!loading&&<div style={{padding:"0 20px"}}><div style={{background:D.redDim,borderRadius:10,padding:14,border:"0.5px solid "+D.red+"33"}}><div style={{fontFamily:D.font,fontSize:13,color:D.red}}>{error}</div></div></div>}
-
       {!loading&&!error&&<div style={{flex:1,overflowY:"auto",padding:"0 20px",paddingBottom:40}}>
         {perfectCount>0&&<div style={{background:D.greenDim,borderRadius:10,padding:"10px 14px",border:"0.5px solid "+D.green+"33",marginBottom:16}}><div style={{fontFamily:D.font,fontSize:13,color:D.green}}>{perfectCount} player{perfectCount!==1?"s":""} hit {win}/{win} in their last {win} games</div></div>}
-        {filtered.length===0&&<div style={{background:D.bg1,borderRadius:12,padding:24,textAlign:"center",fontFamily:D.font,fontSize:14,color:D.t3,border:"0.5px solid "+D.border}}>{streaks.length===0?(bgLoading?"Calculating in the background — check back in a couple of minutes.":"No streak data yet."):"No streaks match your filters."}</div>}
+        {filtered.length===0&&<div style={{background:D.bg1,borderRadius:12,padding:24,textAlign:"center",fontFamily:D.font,fontSize:14,color:D.t3,border:"0.5px solid "+D.border}}>{streaks.length===0?(bgLoading?"Calculating in the background -- check back shortly.":"No streak data yet."):"No streaks match your filters."}</div>}
         {filtered.length>0&&<div style={{display:"grid",gridTemplateColumns:"1fr auto",padding:"8px 0",marginBottom:4}}><span style={{fontFamily:D.font,fontSize:11,color:D.t3,letterSpacing:"0.06em"}}>PLAYER / THRESHOLD</span><span style={{fontFamily:D.font,fontSize:11,color:D.t3,letterSpacing:"0.06em"}}>L{win}</span></div>}
         {filtered.map((s,i)=>{
           const isPerfect=s.is_perfect;
-          const hitColor=isPerfect?D.green:s.hit_rate>=0.8?D.gold:s.hit_rate>=0.6?D.gold:D.t2;
-          const cardBg=isPerfect?D.greenDim:s.hit_rate>=0.8?"rgba(201,168,76,0.08)":D.bg1;
-          const cardBorder=isPerfect?D.green+"44":s.hit_rate>=0.8?D.gold+"33":D.border;
-          const squareHit=isPerfect?D.green:s.hit_rate>=0.7?D.gold:D.gold;
+          const hitColor=isPerfect?D.green:s.hit_rate>=0.8?accent:D.t2;
+          const cardBg=isPerfect?D.greenDim:s.hit_rate>=0.8?(sport==="afl"?"rgba(204,51,51,0.06)":"rgba(201,168,76,0.08)"):D.bg1;
+          const cardBorder=isPerfect?D.green+"44":s.hit_rate>=0.8?accent+"33":D.border;
           const trendColor=s.trend==="up"?D.green:s.trend==="down"?D.red:D.t3;
           return(
             <div key={i} onClick={()=>setSel(s)} style={{background:cardBg,borderRadius:10,padding:"13px 16px",marginBottom:8,border:"0.5px solid "+cardBorder,cursor:"pointer"}}>
@@ -470,7 +639,7 @@ function StreakScreen(){
                   <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}><span style={{fontFamily:D.font,fontWeight:500,fontSize:15,color:D.t1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{s.player}</span><span style={{fontFamily:D.mono,fontSize:9,color:D.t3,flexShrink:0}}>{s.team}</span></div>
                   <div style={{fontFamily:D.font,fontSize:13,color:D.t2,marginBottom:6}}>{s.label}</div>
                   <div style={{display:"flex",gap:3,alignItems:"center"}}>
-                    {(s.last_5_vals||[]).map((v,j)=><div key={j} style={{width:10,height:10,borderRadius:2,background:v>=s.threshold?squareHit:D.bg3}}/>)}
+                    {(s.last_5_vals||[]).map((v,j)=><div key={j} style={{width:10,height:10,borderRadius:2,background:v>=s.threshold?(isPerfect?D.green:accent):D.bg3}}/>)}
                     {s.trend!=="stable"&&<span style={{fontFamily:D.mono,fontSize:10,color:trendColor,marginLeft:4}}>{s.trend==="up"?"↑":"↓"}</span>}
                   </div>
                 </div>
@@ -482,62 +651,138 @@ function StreakScreen(){
             </div>
           );
         })}
-        {filtered.length>0&&<div style={{marginTop:8,paddingLeft:10,borderLeft:"2px solid "+D.bg3,fontFamily:D.font,fontSize:12,color:D.t3,lineHeight:1.6}}>Data from NBA.com game logs via nba_api. Today's players only. Past performance does not guarantee future results.</div>}
+        {filtered.length>0&&<div style={{marginTop:8,paddingLeft:10,borderLeft:"2px solid "+D.bg3,fontFamily:D.font,fontSize:12,color:D.t3,lineHeight:1.6}}>{sport==="afl"?"Data from Footywire.":"Data from NBA.com."} Today's players only. Past performance does not guarantee future results.</div>}
       </div>}
     </div>
   );
 }
 
+// -- App Root ---------------------------------------------------------------
 function App(){
+  const [sport,setSport]=useState(null); // null = show sport selector
   const [screen,setScreen]=useState("picks");
-  const [picks,setPicks]=useState(null);
-  const [games,setGames]=useState([]);
-  const [props,setProps]=useState([]);
-  const [loading,setLoading]=useState(true);
-  const [error,setError]=useState(null);
-  const [lastUpdated,setLastUpdated]=useState(null);
-  const [legsScored,setLegsScored]=useState(0);
-  const [propsScored,setPropsScored]=useState(0);
-  const [gamesAnalyzed,setGamesAnalyzed]=useState(0);
+
+  // NBA state
+  const [nbaPicks,setNbaPicks]=useState(null);
+  const [nbaGames,setNbaGames]=useState([]);
+  const [nbaProps,setNbaProps]=useState([]);
+  const [nbaLoading,setNbaLoading]=useState(false);
+  const [nbaError,setNbaError]=useState(null);
+  const [nbaLastUpdated,setNbaLastUpdated]=useState(null);
+  const [nbaLegsScored,setNbaLegsScored]=useState(0);
+  const [nbaPropsScored,setNbaPropsScored]=useState(0);
+  const [nbaGamesAnalyzed,setNbaGamesAnalyzed]=useState(0);
+
+  // AFL state
+  const [aflPicks,setAflPicks]=useState(null);
+  const [aflGames,setAflGames]=useState([]);
+  const [aflProps,setAflProps]=useState([]);
+  const [aflLoading,setAflLoading]=useState(false);
+  const [aflError,setAflError]=useState(null);
+  const [aflLastUpdated,setAflLastUpdated]=useState(null);
+  const [aflLegsScored,setAflLegsScored]=useState(0);
+  const [aflPropsScored,setAflPropsScored]=useState(0);
+  const [aflRound,setAflRound]=useState(null);
+
+  // Shared loading UI
   const [loadingMsg,setLoadingMsg]=useState("Connecting...");
   const [loadingProgress,setLoadingProgress]=useState(8);
 
-  const loadAll=useCallback(async(force=false)=>{
-    setLoading(true);setError(null);setLoadingMsg("Connecting...");setLoadingProgress(8);
+  const loadNBA=useCallback(async(force=false)=>{
+    setNbaLoading(true);setNbaError(null);setLoadingMsg("Connecting...");setLoadingProgress(8);
     const steps=[[18,"Fetching schedule..."],[34,"Team stats..."],[50,"Injuries..."],[65,"Live odds..."],[80,"Props engine..."],[93,"Building picks..."]];
     let si=0;
     const ticker=setInterval(()=>{if(si<steps.length){setLoadingProgress(steps[si][0]);setLoadingMsg(steps[si][1]);si++;}},8000);
     try{
       const data=await apiFetch(force?"/api/picks?refresh=true":"/api/picks");
       clearInterval(ticker);setLoadingProgress(100);setLoadingMsg("Done");
-      setPicks(data.picks);setLastUpdated(data.last_updated);
-      setLegsScored(data.legs_scored||0);setPropsScored(data.props_scored||0);setGamesAnalyzed(data.games_analyzed||0);
-      apiFetch("/api/slate").then(d=>setGames(d.games||[])).catch(()=>{});
-      apiFetch("/api/props").then(d=>setProps(d.props||[])).catch(()=>{});
+      setNbaPicks(data.picks);setNbaLastUpdated(data.last_updated);
+      setNbaLegsScored(data.legs_scored||0);setNbaPropsScored(data.props_scored||0);setNbaGamesAnalyzed(data.games_analyzed||0);
+      apiFetch("/api/slate").then(d=>setNbaGames(d.games||[])).catch(()=>{});
+      apiFetch("/api/props").then(d=>setNbaProps(d.props||[])).catch(()=>{});
     }catch(e){
       clearInterval(ticker);
-      setError(e.name==="AbortError"?"Request timed out — try again in 30 seconds.":"Could not reach server: "+e.message);
-    }finally{setLoading(false);}
+      setNbaError(e.name==="AbortError"?"Request timed out -- try again in 30 seconds.":"Could not reach server: "+e.message);
+    }finally{setNbaLoading(false);}
   },[]);
 
-  useEffect(()=>{loadAll(false);},[loadAll]);
+  const loadAFL=useCallback(async(force=false)=>{
+    setAflLoading(true);setAflError(null);setLoadingMsg("Connecting...");setLoadingProgress(8);
+    const steps=[[15,"Upcoming fixtures..."],[30,"AFL ladder..."],[50,"Player averages..."],[70,"Prop odds..."],[88,"Building multis..."]];
+    let si=0;
+    const ticker=setInterval(()=>{if(si<steps.length){setLoadingProgress(steps[si][0]);setLoadingMsg(steps[si][1]);si++;}},8000);
+    try{
+      const data=await apiFetch(force?"/api/afl/picks?refresh=true":"/api/afl/picks");
+      clearInterval(ticker);setLoadingProgress(100);setLoadingMsg("Done");
+      setAflPicks(data.picks);setAflLastUpdated(data.last_updated);setAflRound(data.round);
+      setAflLegsScored(data.legs_scored||0);setAflPropsScored(data.props_scored||0);setAflRound(data.round||null);
+      apiFetch("/api/afl/games").then(d=>{setAflGames(d.games||[]);if(d.round)setAflRound(d.round);}).catch(()=>{});
+      apiFetch("/api/afl/props").then(d=>setAflProps(d.props||[])).catch(()=>{});
+    }catch(e){
+      clearInterval(ticker);
+      setAflError(e.name==="AbortError"?"Request timed out -- try again.":"Could not reach server: "+e.message);
+    }finally{setAflLoading(false);}
+  },[]);
+
+  const handleSelectSport=useCallback((s)=>{
+    setSport(s);
+    setScreen("picks");
+    if(s==="nba"&&!nbaPicks){loadNBA(false);}
+    if(s==="afl"&&!aflPicks){loadAFL(false);}
+  },[nbaPicks,aflPicks,loadNBA,loadAFL]);
+
+  const handleRefresh=useCallback(()=>{
+    if(sport==="nba")loadNBA(true);
+    if(sport==="afl")loadAFL(true);
+  },[sport,loadNBA,loadAFL]);
+
+  const handleChangeSport=useCallback(()=>{
+    setSport(null);
+    setScreen("picks");
+  },[]);
+
+  const loading=sport==="afl"?aflLoading:nbaLoading;
+  const lastUpdated=sport==="afl"?aflLastUpdated:nbaLastUpdated;
+  const accent=sport==="afl"?D.afl:D.gold;
+
+  // Sport selector
+  if(!sport){
+    return(
+      <div style={{width:"100%",height:"100%",background:D.bg,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+        <div style={{paddingTop:"env(safe-area-inset-top,44px)",flexShrink:0,padding:"16px 20px",borderBottom:"0.5px solid "+D.border}}>
+          <div style={{fontFamily:D.font,fontWeight:600,fontSize:15,letterSpacing:"0.1em",color:D.t1,textTransform:"uppercase",textAlign:"center"}}>Sport<span style={{color:D.gold}}>Edge</span></div>
+        </div>
+        <SportSelector onSelect={handleSelectSport}/>
+      </div>
+    );
+  }
 
   return(
     <div style={{width:"100%",height:"100%",background:D.bg,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <style>{"@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}"}</style>
       <div style={{paddingTop:"env(safe-area-inset-top,44px)",flexShrink:0}}>
         <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",padding:"10px 20px",borderBottom:"0.5px solid "+D.border,position:"relative"}}>
-          <HamburgerMenu onNavigate={setScreen} onRefresh={()=>loadAll(true)} loading={loading} lastUpdated={lastUpdated}/>
-          <div style={{fontFamily:D.font,fontWeight:600,fontSize:15,letterSpacing:"0.1em",color:D.t1,textTransform:"uppercase",position:"absolute",left:"50%",transform:"translateX(-50%)"}}>NBA<span style={{color:D.gold}}>Edge</span></div>
-          <div style={{display:"flex",alignItems:"center",gap:6}}>
-            {loading?<><div style={{width:6,height:6,borderRadius:"50%",background:D.gold,animation:"pulse 1.2s ease-in-out infinite"}}/><style>{"@keyframes pulse{0%,100%{opacity:1}50%{opacity:0.3}}"}</style></>:<div style={{width:6,height:6,borderRadius:"50%",background:D.green}}/>}
+          <HamburgerMenu onNavigate={setScreen} onRefresh={handleRefresh} onChangeSport={handleChangeSport} loading={loading} lastUpdated={lastUpdated} sport={sport}/>
+          <div style={{fontFamily:D.font,fontWeight:600,fontSize:15,letterSpacing:"0.1em",color:D.t1,textTransform:"uppercase",position:"absolute",left:"50%",transform:"translateX(-50%)"}}>Sport<span style={{color:accent}}>Edge</span></div>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <span style={{fontFamily:D.mono,fontSize:10,color:accent,letterSpacing:"0.06em"}}>{sport.toUpperCase()}</span>
+            {loading?<div style={{width:6,height:6,borderRadius:"50%",background:accent,animation:"pulse 1.2s ease-in-out infinite"}}/>:<div style={{width:6,height:6,borderRadius:"50%",background:D.green}}/>}
           </div>
         </div>
       </div>
       <div style={{flex:1,display:"flex",flexDirection:"column",overflow:"hidden",minHeight:0}}>
-        {screen==="picks"&&<PicksScreen picks={picks} loading={loading} loadingMsg={loadingMsg} loadingProgress={loadingProgress} error={error} onRetry={()=>loadAll(false)} lastUpdated={lastUpdated} legsScored={legsScored} propsScored={propsScored} gamesAnalyzed={gamesAnalyzed}/>}
-        {screen==="games"&&<GamesScreen games={games} loading={loading}/>}
-        {screen==="props"&&<PropsScreen props={props} loading={loading}/>}
-        {screen==="streak"&&<StreakScreen/>}
+        {sport==="nba"&&<>
+          {screen==="picks"&&<PicksScreen picks={nbaPicks} loading={nbaLoading} loadingMsg={loadingMsg} loadingProgress={loadingProgress} error={nbaError} onRetry={()=>loadNBA(false)} lastUpdated={nbaLastUpdated} legsScored={nbaLegsScored} propsScored={nbaPropsScored} gamesAnalyzed={nbaGamesAnalyzed} sport="nba"/>}
+          {screen==="games"&&<NBAGamesScreen games={nbaGames} loading={nbaLoading}/>}
+          {screen==="props"&&<NBAPropsScreen props={nbaProps} loading={nbaLoading}/>}
+          {screen==="streak"&&<StreakScreen sport="nba"/>}
+        </>}
+        {sport==="afl"&&<>
+          {screen==="picks"&&<PicksScreen picks={aflPicks} loading={aflLoading} loadingMsg={loadingMsg} loadingProgress={loadingProgress} error={aflError} onRetry={()=>loadAFL(false)} lastUpdated={aflLastUpdated} legsScored={aflLegsScored} propsScored={aflPropsScored} gamesAnalyzed={aflGames.length} sport="afl" roundNum={aflRound}/>}
+          {screen==="games"&&<AFLGamesScreen games={aflGames} loading={aflLoading} roundNum={aflRound}/>}
+          {screen==="props"&&<AFLPropsScreen props={aflProps} loading={aflLoading}/>}
+          {screen==="streak"&&<StreakScreen sport="afl"/>}
+        </>}
       </div>
     </div>
   );
