@@ -1,6 +1,6 @@
 // SportEdge v8 -- Multi-sport: NBA + AFL
 const { useState, useEffect, useCallback, useRef } = React;
-const API_BASE = "https://nba-edge-api.onrender.com";
+const API_BASE = "https://nba-edge-api-production.up.railway.app";
 const D = {
   bg:"#0A0A0A",bg1:"#141414",bg2:"#1E1E1E",bg3:"#282828",
   t1:"#F5F5F5",t2:"#A0A0A0",t3:"#606060",
